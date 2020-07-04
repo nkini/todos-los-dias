@@ -20,13 +20,6 @@ type Task struct {
 
 func insertTask(db *sql.DB, task string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, err := db.Exec("CREATE TABLE IF NOT EXISTS task (name varchar(500), create_time timestamp)"); err != nil {
-			c.String(http.StatusInternalServerError,
-				fmt.Sprintf("Error creating database table: %q", err))
-			log.Fatalf("Error creating database table: %q", err)
-			return
-		}
-
 		if _, err := db.Exec("INSERT INTO task VALUES (?, now())", task); err != nil {
 			c.String(http.StatusInternalServerError,
 				fmt.Sprintf("Error incrementing tick: %q", err))
@@ -40,7 +33,7 @@ func getTasks(db *sql.DB) (tasks []Task) {
 
 	rows, err := db.Query("SELECT name, create_time FROM task")
 	if err != nil {
-		log.Fatalf("Error reading tasks: %q", err)
+		log.Fatalf("Error reading task: %q", err)
 		return
 	}
 	defer rows.Close()
@@ -56,10 +49,16 @@ func getTasks(db *sql.DB) (tasks []Task) {
 		}
 
 		tasks = append(tasks, Task{Name: name, CreateTime: create_time})
-		log.Print(name)
-		log.Printf("%s", create_time)
 	}
 	return
+}
+
+func dbSetup(db *sql.DB) {
+	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS task (name varchar(500), create_time timestamp)"); err != nil {
+		log.Fatalf("Error creating database table: %q", err)
+		return
+	}
+	log.Print("dbSetup completed successfully")
 }
 
 func main() {
@@ -70,10 +69,11 @@ func main() {
 	}
 
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
-	log.Printf("Database URL: %s", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatalf("Error opening database: %q", err)
 	}
+
+	dbSetup(db)
 
 	router := gin.New()
 	router.Use(gin.Logger())
