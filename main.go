@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,49 +13,53 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func repeatHandler(r int) gin.HandlerFunc {
+type Task struct {
+	Name       string
+	CreateTime time.Time
+}
+
+func insertTask(db *sql.DB, task string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var buffer bytes.Buffer
-		for i := 0; i < r; i++ {
-			buffer.WriteString("Hello from Go!\n")
+		if _, err := db.Exec("CREATE TABLE IF NOT EXISTS task (name varchar(500), create_time timestamp)"); err != nil {
+			c.String(http.StatusInternalServerError,
+				fmt.Sprintf("Error creating database table: %q", err))
+			log.Fatalf("Error creating database table: %q", err)
+			return
 		}
-		c.String(http.StatusOK, buffer.String())
+
+		if _, err := db.Exec("INSERT INTO task VALUES (?, now())", task); err != nil {
+			c.String(http.StatusInternalServerError,
+				fmt.Sprintf("Error incrementing tick: %q", err))
+			log.Fatalf("Error incrementing tick: %q", err)
+			return
+		}
 	}
 }
 
-func dbFunc(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if _, err := db.Exec("CREATE TABLE IF NOT EXISTS ticks (tick timestamp)"); err != nil {
-			c.String(http.StatusInternalServerError,
-				fmt.Sprintf("Error creating database table: %q", err))
-			return
-		}
+func getTasks(db *sql.DB) (tasks []Task) {
 
-		if _, err := db.Exec("INSERT INTO ticks VALUES (now())"); err != nil {
-			c.String(http.StatusInternalServerError,
-				fmt.Sprintf("Error incrementing tick: %q", err))
-			return
-		}
-
-		rows, err := db.Query("SELECT tick FROM ticks")
-		if err != nil {
-			c.String(http.StatusInternalServerError,
-				fmt.Sprintf("Error reading ticks: %q", err))
-			return
-		}
-
-		defer rows.Close()
-		for rows.Next() {
-			var tick time.Time
-			if err := rows.Scan(&tick); err != nil {
-				c.String(http.StatusInternalServerError,
-					fmt.Sprintf("Error scanning ticks: %q", err))
-				return
-			}
-			c.String(http.StatusOK, fmt.Sprintf("Read from DB: %s\n", tick.String()))
-		}
-		c.String(http.StatusOK, fmt.Sprintf("Hello Alanna! This will soon be your todo list!"))
+	rows, err := db.Query("SELECT name, create_time FROM tasks")
+	if err != nil {
+		log.Fatalf("Error reading tasks: %q", err)
+		return
 	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var name string
+		var create_time time.Time
+
+		err := rows.Scan(&name, &create_time)
+		if err != nil {
+			log.Fatalf("Error scanning row: %q", err)
+			return
+		}
+
+		tasks = append(tasks, Task{Name: name, CreateTime: create_time})
+		log.Print(name)
+		log.Printf("%s", create_time)
+	}
+	return
 }
 
 func main() {
@@ -67,14 +69,8 @@ func main() {
 		log.Fatal("$PORT must be set")
 	}
 
-	tStr := os.Getenv("REPEAT")
-	repeat, err := strconv.Atoi(tStr)
-	if err != nil {
-		log.Printf("Error converting $REPEAT to an int: %q - Using default\n", err)
-		repeat = 5
-	}
-
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	log.Printf("Database URL: %s", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatalf("Error opening database: %q", err)
 	}
@@ -88,9 +84,10 @@ func main() {
 		c.HTML(http.StatusOK, "index.tmpl.html", nil)
 	})
 
-	router.GET("/repeat", repeatHandler(repeat))
-
-	router.GET("/db", dbFunc(db))
+	router.POST("/", func(c *gin.Context) {
+		insertTask(db, c.PostForm("task"))
+		c.HTML(http.StatusOK, "index.tmpl.html", getTasks(db))
+	})
 
 	router.Run(":" + port)
 }
