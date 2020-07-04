@@ -38,7 +38,7 @@ func insertTask(db *sql.DB, task string) gin.HandlerFunc {
 
 func getTasks(db *sql.DB) (tasks []Task) {
 
-	rows, err := db.Query("SELECT name, create_time FROM tasks")
+	rows, err := db.Query("SELECT name, create_time FROM task")
 	if err != nil {
 		log.Fatalf("Error reading tasks: %q", err)
 		return
