@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -18,15 +17,15 @@ type Task struct {
 	CreateTime time.Time
 }
 
-func insertTask(db *sql.DB, task string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if _, err := db.Exec("INSERT INTO task VALUES (?, now())", task); err != nil {
-			c.String(http.StatusInternalServerError,
-				fmt.Sprintf("Error incrementing tick: %q", err))
-			log.Fatalf("Error incrementing tick: %q", err)
-			return
-		}
+func insertTask(db *sql.DB, task string) {
+	sqlStatement := `
+		INSERT INTO task (name, create_time) 
+		VALUES ($1, now()) 
+	`
+	if _, err := db.Exec(sqlStatement, task); err != nil {
+		log.Fatalf("Error inserting into task: %q", err)
 	}
+	log.Print("task inserted successfully")
 }
 
 func getTasks(db *sql.DB) (tasks []Task) {
